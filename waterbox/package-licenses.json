@@ -1,0 +1,29 @@
+{
+  "package": "opera",
+  "effectiveTerms": "FreeDO notice (non-commercial) over LGPL, with MIT integration",
+  "commercialUse": "prohibited",
+  "note": "libopera descends from FreeDO, whose notice takes precedence over the LGPL and forbids commercial use without the owners' approval. The package as a whole inherits that restriction.",
+  "components": [
+    {
+      "name": "chimera-core-opera (integration)",
+      "license": "MIT, and opera-libretro terms for patches/",
+      "url": "https://github.com/ToolAssisted-run/chimera-core-opera",
+      "commit": "{selfCommit}",
+      "file": "LICENSE"
+    },
+    {
+      "name": "opera-libretro (libopera, FreeDO-descended)",
+      "license": "modified LGPL with the FreeDO notice (non-commercial)",
+      "url": "https://github.com/libretro/opera-libretro",
+      "commit": "{submodule:extern/opera-libretro}",
+      "file": "waterbox/licenses/FreeDO-NOTICE.txt",
+      "sourceUrl": "https://github.com/libretro/opera-libretro/archive/{commit}.tar.gz"
+    },
+    {
+      "name": "zlib (bundled in opera-libretro)",
+      "license": "zlib",
+      "url": "https://zlib.net",
+      "file": "extern/opera-libretro/deps/zlib-1.3.1.2/LICENSE"
+    }
+  ]
+}
