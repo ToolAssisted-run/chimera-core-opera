@@ -1,0 +1,3 @@
+[submodule "extern/opera-libretro"]
+	path = extern/opera-libretro
+	url = https://github.com/libretro/opera-libretro.git

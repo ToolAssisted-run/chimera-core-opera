@@ -1,0 +1,18 @@
+{
+  "_comment": "The core-declared file form for chimera's project wizard: a 3DO project is one or more disc images. The BIOS comes through the firmware page, driven by the systemType setting.",
+  "slots": [
+    {
+      "id": "cd",
+      "title": "Discs",
+      "min": 1,
+      "max": -1,
+      "formats": [
+        "iso",
+        "cue",
+        "chd",
+        "bin"
+      ],
+      "help": "3DO disc images: .iso/.bin raw dumps, a .cue sheet whose referenced track files join the project automatically, or a .chd. The first disc is in the drive at boot; the order here is the swap order used by the Previous/Next Disc inputs."
+    }
+  ]
+}

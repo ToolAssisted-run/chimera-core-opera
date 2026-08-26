@@ -1,0 +1,82 @@
+diff --git a/libopera/opera_madam.c b/libopera/opera_madam.c
+index 007980a..50ad478 100644
+--- a/libopera/opera_madam.c
++++ b/libopera/opera_madam.c
+@@ -634,6 +634,10 @@ static void    DrawLRCel(void);
+ static void    HandleDMA8(void);
+ static void    DMAPBus(void);
+ 
++/* chimera: raised whenever the machine DMAs the player bus - the frontend's
++   lag counter (InputWasRead) watches it */
++int opera_input_ports_read;
++
+ static struct
+ {
+   uint32_t plutaCCBbits;
+@@ -1317,6 +1321,7 @@ DMAPBus(void)
+   if((int32_t)MADAM.mregs[MADAM_REG_DMA8_LEN] < 0)
+     return;
+ 
++  opera_input_ports_read = 1;
+   opera_pbus_pad();
+ 
+   /*
+diff --git a/libretro.c b/libretro.c
+index 27e7f9d..35726c9 100644
+--- a/libretro.c
++++ b/libretro.c
+@@ -667,10 +667,17 @@ static
+ void
+ retro_reset_core(retro_reset_flags_t flags_)
+ {
+-  if(flags_ & RETRO_RESET_FLAG_SAVE_NVRAM)
+-    opera_lr_nvram_save(game_info_path_get(),
+-                        g_OPTS.nvram_shared,
+-                        g_OPTS.nvram_version);
++  /* chimera: NVRAM must survive a console reset in memory - the guest
++     filesystem is read-only, so the upstream save-directory round-trip
++     would silently wipe it */
++  uint8_t nvram_stash[NVRAM_SIZE];
++  int have_stash = 0;
++
++  if(NVRAM != NULL)
++    {
++      memcpy(nvram_stash,NVRAM,NVRAM_SIZE);
++      have_stash = 1;
++    }
+ 
+   opera_3do_destroy();
+   opera_lr_opts_reset();
+@@ -679,9 +686,8 @@ retro_reset_core(retro_reset_flags_t flags_)
+   opera_3do_init(libopera_callback);
+   cdimage_set_sector(0);
+ 
+-  opera_lr_nvram_load(game_info_path_get(),
+-                      g_OPTS.nvram_shared,
+-                      g_OPTS.nvram_version);
++  if(have_stash && (NVRAM != NULL))
++    memcpy(NVRAM,nvram_stash,NVRAM_SIZE);
+ }
+ 
+ void
+diff --git a/opera_lr_opts.c b/opera_lr_opts.c
+index 1236fcf..11cdb9a 100644
+--- a/opera_lr_opts.c
++++ b/opera_lr_opts.c
+@@ -276,6 +276,16 @@ opera_lr_opts_get_bios(opera_lr_opts_t *opts_)
+       opts_->bios = bios;
+       return;
+     }
++
++  /* chimera: a dump the table has never seen is still usable - only the
++     filename is ever read from the entry */
++  {
++    static opera_bios_t custom_bios;
++    static char custom_name[256];
++    strncpy(custom_name,val,sizeof(custom_name) - 1);
++    custom_bios.filename = custom_name;
++    opts_->bios = &custom_bios;
++  }
+ }
+ 
+ static

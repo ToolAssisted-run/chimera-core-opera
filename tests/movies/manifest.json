@@ -1,0 +1,12 @@
+[
+ {
+  "name": "jinglesDefense",
+  "sol": "jinglesDefense.sol",
+  "rom": "jdef.iso",
+  "sha1": "EEC4534631803AAA462BE42486A2EE736363E0BC",
+  "bios": "panafz1.bin",
+  "systemType": "panasonicFZ1U",
+  "ctl1": "joypad",
+  "ctl2": "none"
+ }
+]

@@ -1,0 +1,3 @@
+
+=== miniBox: unhandled fault (2026-08-26 12:46:10) ===
+[tripguard] unhandled fault: addr=0x36f00279000 read/exec rip=0x36f0001afde, inside a registered block (page 633 status=32 dirty=1 invisible=1) [1 block(s) registered]
