@@ -36,7 +36,7 @@ fi
 chimera_root="$(cd "$chimera_root" && pwd)"
 
 emu_exe="$chimera_root/build/Chimera.exe"
-package="$chimera_root/build/Cores/opera.zip"
+package="$chimera_root/build/Cores/opera.chimeraCore"
 rn="$root/build/meson-native/run-native"
 rom="$here/work/fake.iso"
 [ -f "$emu_exe" ] || { echo "Chimera not built: $emu_exe" >&2; exit 1; }

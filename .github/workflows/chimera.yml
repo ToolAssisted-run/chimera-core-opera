@@ -166,7 +166,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: opera-${{ github.sha }}
-          path: chimera-checkout/build/Cores/opera.zip
+          path: chimera-checkout/build/Cores/opera.chimeraCore
           if-no-files-found: error
 
       - name: Upload the frontend work dir on failure

@@ -122,7 +122,7 @@ build over miniBox, C only; package via build-package.sh).
   videoStandard and randomSeed legs. tests/run-frontend.sh 3/3 (System RAM
   byte-identical inside Chimera via the real firmware channel - an
   unrecognized dump is usable by design; PAL frame height; keybinds).
-  Package installs as build/Cores/opera.zip; CI written.
+  Package installs as build/Cores/opera.chimeraCore; CI written.
   FOUND AND FIXED IN CHIMERA (be85106): ce_session_open's abort path
   double-freed the package on any post-copy failure - Opera's missing-BIOS
   refusal was the first Init failure ever to travel it.
