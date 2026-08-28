@@ -13,6 +13,16 @@
         "bin"
       ],
       "help": "3DO disc images: .iso/.bin raw dumps, a .cue sheet whose referenced track files join the project automatically, or a .chd. The first disc is in the drive at boot; the order here is the swap order used by the Previous/Next Disc inputs."
+    },
+    {
+      "id": "savedata",
+      "title": "Save data",
+      "min": 0,
+      "max": 1,
+      "formats": [
+        "ram"
+      ],
+      "help": "What the console starts with already remembered. A 3DO keeps saved games and its own settings in NVRAM; this is the file Emulator > Export Save Data... writes, put back under the same name - NVRAM.ram - so a run can continue from where another left off. It is mounted read-only and pinned by hash, and the movie cites it, so a movie that starts from a saved game is as reproducible as one that starts from a blank console. Leave it empty and the machine starts with nothing remembered."
     }
   ]
 }

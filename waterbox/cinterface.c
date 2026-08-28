@@ -37,6 +37,9 @@ extern void opera_lr_callbacks_set_input_state(retro_input_state_t cb);
 extern void opera_lr_callbacks_set_video_refresh(retro_video_refresh_t cb);
 extern int opera_input_ports_read; /* patched opera_madam.c raises it on PBus DMA */
 
+/* The one file this machine keeps, in and out under the same name. */
+#define NVRAM_FILE_NAME "NVRAM.ram"
+
 static char g_loadError[512];
 static int g_inited;
 
@@ -416,6 +419,27 @@ ECL_EXPORT int Init(void)
 	g_port1Type = port_type("port1");
 	g_port2Type = port_type("port2");
 
+	/* Save data the project brought is mounted under its own name and read in
+	 * below, once the machine exists. What happens here is a REFUSAL: a file
+	 * named something this machine never opens would be carried by the project
+	 * and pinned by the movie, and then ignored. */
+	{
+		char entry[512];
+		int32_t saves = wbx_slot_count("savedata");
+		for (int32_t i = 0; i < saves; i++)
+		{
+			if (wbx_slot_name("savedata", i, entry, sizeof entry) == NULL)
+				continue;
+			if (strcmp(entry, NVRAM_FILE_NAME) != 0)
+			{
+				snprintf(g_loadError, sizeof g_loadError,
+					"this machine does not read save data called \"%s\". It reads %s - "
+					"the name Export Save Data writes.", entry, NVRAM_FILE_NAME);
+				return 0;
+			}
+		}
+	}
+
 	/* the disc list: the project's cd slot, else the plain "rom" mount */
 	g_discCount = wbx_slot_count("cd");
 	if (g_discCount > MAX_DISCS) g_discCount = MAX_DISCS;
@@ -466,6 +490,27 @@ ECL_EXPORT int Init(void)
 	{
 		snprintf(g_loadError, sizeof g_loadError, "Opera could not load '%s'", g_discs[0]);
 		return 0;
+	}
+
+	/* What the console starts with already remembered.
+	 *
+	 * NVRAM is where a 3DO keeps saved games and its own settings, and it is
+	 * allocated blank when the machine is built. A project that brought one -
+	 * the file Export Save Data writes, mounted back under the same name -
+	 * has it read in here: after retro_load_game, so the machine exists, and
+	 * still inside Init, so it lands in the sealed baseline rather than in
+	 * every savestate. */
+	if (NVRAM != NULL)
+	{
+		FILE *nv = fopen(NVRAM_FILE_NAME, "rb");
+		if (nv != NULL)
+		{
+			size_t got = fread(NVRAM, 1, NVRAM_SIZE, nv);
+			fclose(nv);
+			if (got != NVRAM_SIZE)
+				fprintf(stderr, "chimera: %s is %zu bytes, not %u; the rest is left blank\n",
+					NVRAM_FILE_NAME, got, (unsigned)NVRAM_SIZE);
+		}
 	}
 
 	g_inited = 1;
@@ -635,7 +680,7 @@ ECL_EXPORT int32_t GetSaveDataFileCount(void)
 }
 ECL_EXPORT const char *GetSaveDataFileName(int32_t i)
 {
-	return i == 0 && NVRAM != NULL ? "NVRAM.ram" : NULL;
+	return i == 0 && NVRAM != NULL ? NVRAM_FILE_NAME : NULL;
 }
 ECL_EXPORT int64_t GetSaveDataFileSize(int32_t i)
 {

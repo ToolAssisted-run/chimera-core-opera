@@ -115,6 +115,32 @@ else
 	report "savedata:export" FAIL "export trees differ"
 fi
 
+# ...and back in. A project supplies save data by mounting it under the name the
+# export wrote, so NVRAM marked with bytes the machine could not have written
+# must reach the machine and come back carrying them.
+seed="$work/nv-seed"
+back="$work/nv-back"
+mkdir -p "$seed" "$back"
+cp "$wd"/* "$seed/" 2>/dev/null
+if [ -f "$work/sd.nat/NVRAM.ram" ] && python3 - "$work/sd.nat/NVRAM.ram" "$seed/NVRAM.ram" <<'PYSEED'
+import sys
+d = bytearray(open(sys.argv[1], 'rb').read())
+d[0x40:0x50] = b'CHIMERA-SEED-TST'
+open(sys.argv[2], 'wb').write(bytes(d))
+PYSEED
+then
+	"$nat/run-native" "$seed" --frames 60 --savedata-out "$back" >/dev/null 2>&1
+	if [ ! -f "$back/NVRAM.ram" ]; then
+		report "savedata:seeded" FAIL "nothing came back with NVRAM mounted"
+	elif ! cmp -s "$seed/NVRAM.ram" "$back/NVRAM.ram"; then
+		report "savedata:seeded" FAIL "the mounted NVRAM is not what came back"
+	else
+		report "savedata:seeded" PASS "NVRAM the project supplied reached the machine and returned unchanged"
+	fi
+else
+	report "savedata:seeded" FAIL "could not make a marked NVRAM to mount"
+fi
+
 # ---- settings leg: videoStandard=pal1 must reach the guest (vsync flips) ----
 printf '{"videoStandard":"pal1"}' > "$wd/settings"
 "$nat/run-native" "$wd" --frames 120 2>/dev/null | digests > "$work/pal.nat.txt"
