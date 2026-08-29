@@ -33,6 +33,10 @@ done
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 digests() { grep -E '^(frames|vsync|videoHash|audioHash|lagFrames|domain\[)'; }
+# What a turbo run can be held to: everything except the whole-run video hash,
+# which a run that skipped the first half cannot possibly match - the second
+# half it did draw is compared instead.
+turboDigests() { grep -E '^(frames|vsync|tailVideoHash|audioHash|lagFrames|domain\[)'; }
 
 ok=0
 failed=0
@@ -62,6 +66,20 @@ run_pair() {
 		return 1
 	fi
 	report "$tag:equivalence" PASS "$(sed -n 's/^frames=//p' "$work/$tag.box.txt") frames, native == waterboxed"
+
+	# Turbo: the VDLP's scanline renderer switched off for the first half of the
+	# run and back on for the second. The machine, the sound, the lag count and
+	# every picture of that second half must be what they would have been.
+	"$nat/run-wbx" "$gst/core.wbx" "$wd" "$@" 2>/dev/null | turboDigests > "$work/$tag.tnorm.txt"
+	if "$nat/run-wbx" "$gst/core.wbx" "$wd" "$@" --turbo 2>/dev/null | turboDigests > "$work/$tag.turbo.txt"; then
+		if cmp -s "$work/$tag.tnorm.txt" "$work/$tag.turbo.txt"; then
+			report "$tag:turbo" PASS "$(sed -n 's/^frames=//p' "$work/$tag.box.txt") frames, half of them undrawn, same machine and same pictures"
+		else
+			report "$tag:turbo" FAIL "$(diff "$work/$tag.tnorm.txt" "$work/$tag.turbo.txt" | tr '\n' ' ' | head -c 120)"
+		fi
+	else
+		report "$tag:turbo" FAIL "turbo runner error"
+	fi
 
 	if ! "$nat/run-wbx" "$gst/core.wbx" "$wd" "$@" --rerecord 2>/dev/null | digests > "$work/$tag.rr.txt"; then
 		report "$tag:savestate" FAIL "rerecord runner error"

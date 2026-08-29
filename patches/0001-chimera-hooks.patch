@@ -21,6 +21,38 @@ index 007980a..50ad478 100644
    opera_pbus_pad();
  
    /*
+diff --git a/libopera/opera_vdlp.c b/libopera/opera_vdlp.c
+index e052ed3..83b0816 100644
+--- a/libopera/opera_vdlp.c
++++ b/libopera/opera_vdlp.c
+@@ -824,6 +824,11 @@ tick_fba(const uint32_t fba_)
+   return (fba_ + ((fba_ & 2) ? ((modulo << 2) - 2) : 2));
+ }
+ 
++/* chimera: 0 while the frontend is fast-forwarding; defined by the ABI layer
++   (waterbox/cinterface.c) in memory the savestate does not cover, because it
++   is the frontend's policy for the moment and not part of the machine. */
++extern int chimera_render_enabled;
++
+ static
+ INLINE
+ int
+@@ -860,7 +865,14 @@ opera_vdlp_process_line(int line_)
+   if(madam_clut_dma_enabled() && (g_VDLP.line_cnt <= 0))
+     vdlp_process_vdl_entry();
+ 
+-  if(visible_scanline(line_))
++  /* chimera: turbo. The VDLP is the 3DO's DISPLAY processor - it reads the
++     framebuffer the cel engine already wrote into VRAM and turns it into
++     pixels for the outside world. Nothing the ARM can see comes back from it,
++     while everything the VDLP itself remembers (the frame-buffer tick, the
++     line counter, the display-list walk) is done below whatever happens here.
++     So a frame nobody is going to look at can skip the rendering and keep the
++     rest. */
++  if(visible_scanline(line_) && chimera_render_enabled)
+     g_RENDERER();
+ 
+   g_VDLP.prev_bmp = ((g_VDLP.clut_ctrl.cdcw.prev_fba_tick) ?
 diff --git a/libretro.c b/libretro.c
 index 27e7f9d..35726c9 100644
 --- a/libretro.c

@@ -107,6 +107,14 @@ static uint32_t g_videoOut[VID_MAX_W * VID_MAX_H];
 static int g_vwidth = 320, g_vheight = 240;
 
 static const uint32_t *g_lastFrame;
+
+/* Turbo. patches/ makes the VDLP - the 3DO's display processor - read this and
+ * skip its scanline renderer while it is 0. Everything the ARM can see, cel
+ * engine included, runs regardless; only the picture stops. ECL_INVISIBLE
+ * because it is the frontend's policy for the moment, not part of the machine:
+ * a state saved while fast-forwarding must not put the machine back into it
+ * when it is loaded to be looked at. */
+ECL_INVISIBLE int chimera_render_enabled = 1;
 static unsigned g_lastW, g_lastH;
 static size_t g_lastPitch;
 
@@ -504,7 +512,9 @@ ECL_EXPORT void FrameAdvance(uint64_t packed)
 	else
 		retro_run();
 
-	if (g_lastFrame != NULL)
+	/* In turbo the VDLP rendered nothing, so the buffer the callback handed
+	 * over holds the last frame that was drawn and there is nothing to copy. */
+	if (g_lastFrame != NULL && chimera_render_enabled)
 	{
 		unsigned w = g_lastW <= VID_MAX_W ? g_lastW : VID_MAX_W;
 		unsigned h = g_lastH <= VID_MAX_H ? g_lastH : VID_MAX_H;
@@ -520,6 +530,12 @@ ECL_EXPORT void FrameAdvance(uint64_t packed)
 		g_vheight = (int)h;
 	}
 }
+
+/* Turbo (optional guest ABI group): while off the core must produce no picture
+ * and must otherwise be exactly the machine it would have been. run-gate.sh's
+ * turbo leg is the proof - N undrawn frames plus one drawn one come out byte for
+ * byte the same machine, and the same picture, as N+1 drawn ones. */
+ECL_EXPORT void SetRenderingEnabled(int on) { chimera_render_enabled = on != 0; }
 
 ECL_EXPORT uint32_t *GetVideoBgra(void) { return g_videoOut; }
 ECL_EXPORT int GetVideoWidth(void) { return g_vwidth; }
