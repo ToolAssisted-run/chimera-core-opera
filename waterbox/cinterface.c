@@ -528,15 +528,26 @@ ECL_EXPORT int GetVideoHeight(void) { return g_vheight; }
 ECL_EXPORT int16_t *GetAudio(void) { return g_soundbuffer; }
 ECL_EXPORT int GetAudioSampleCount(void) { return g_nsamples; }
 
-/* the standard's vertical rate, keyed off the videoStandard setting
- * (BizHawk's constants) */
+/* The machine's field rate, keyed off the videoStandard setting.
+ *
+ * Not the standard's round number: opera's own clock keeps the rate as a
+ * 16.16 fixed-point value and drives the machine from it, so that is what a
+ * frame of this core actually lasts. OPERA_NTSC_FIELD_RATE_1616 is 3928227,
+ * over the 65536 of the fixed point, which is 59.93998718Hz; PAL's constant
+ * comes out at exactly 50. One FrameAdvance is one retro_run is one field, so
+ * these are the rate a movie of this machine ran at.
+ *
+ * It said a flat 60 for a while, which is nobody's rate: not the standard's
+ * 59.94, and not the 59.93998718 this core times itself by. Half a second of
+ * drift over a two-hour movie, in the number a frontend turns into a running
+ * time. */
 ECL_EXPORT int GetVsyncNumerator(void)
 {
-	return g_region == 0 ? 60 : 50;
+	return g_region == 0 ? 3928227 : 50;
 }
 ECL_EXPORT int GetVsyncDenominator(void)
 {
-	return 1;
+	return g_region == 0 ? 65536 : 1;
 }
 
 ECL_EXPORT int InputWasRead(void)

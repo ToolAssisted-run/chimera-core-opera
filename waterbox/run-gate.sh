@@ -105,8 +105,14 @@ if ! cmp -s "$work/pal.nat.txt" "$work/pal.box.txt"; then
 	report "settings:videoStandard" FAIL "$(diff "$work/pal.nat.txt" "$work/pal.box.txt" | tr '\n' ' ' | head -c 120)"
 elif ! grep -q '^vsync=50/1$' "$work/pal.box.txt"; then
 	report "settings:videoStandard" FAIL "vsync did not flip to PAL: $(grep '^vsync=' "$work/pal.box.txt")"
+elif ! grep -q '^vsync=3928227/65536$' "$work/smoke.box.txt"; then
+	# The NTSC rate is the machine's, not the standard's round number: opera
+	# keeps the field rate as 16.16 fixed point and times itself by it. This
+	# said a flat 60 once, which is nobody's rate, and it is the number a
+	# movie header carries - so both regions are pinned rather than one.
+	report "settings:videoStandard" FAIL "ntsc vsync is $(grep '^vsync=' "$work/smoke.box.txt"), want 3928227/65536"
 else
-	report "settings:videoStandard" PASS "pal1 reached the guest, vsync flipped to 50Hz"
+	report "settings:videoStandard" PASS "pal1 reached the guest: 50/1 for PAL, 3928227/65536 for NTSC"
 fi
 rm -f "$wd/settings"
 
