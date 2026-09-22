@@ -54,10 +54,46 @@ index e052ed3..83b0816 100644
  
    g_VDLP.prev_bmp = ((g_VDLP.clut_ctrl.cdcw.prev_fba_tick) ?
 diff --git a/libretro.c b/libretro.c
-index 27e7f9d..35726c9 100644
+index 27e7f9d..16643fe 100644
 --- a/libretro.c
 +++ b/libretro.c
-@@ -667,10 +667,17 @@ static
+@@ -169,6 +169,35 @@ cdimage_set_sector(const uint32_t sector_)
+   CDIMAGE_SECTOR = sector_;
+ }
+ 
++/* Chimera: the data source, swapped for another, and NOTHING else.
++ *
++ * The disc is whatever CDIMAGE reads from, so pointing it at a different
++ * image is the whole of a swap as far as the host is concerned. What this
++ * deliberately does NOT do is tell the 3DO anything: no lid, no media-change
++ * status, no table-of-contents re-read. That is the question being asked -
++ * whether a game that is waiting for its next disc picks the new one up on
++ * its own, or whether it has to be told. Answering it needs the bare version
++ * first; a notification added before we know would make a working swap look
++ * like proof of a mechanism nobody had shown was necessary.
++ *
++ * Returns 0 on success, -1 if the new image will not open - in which case the
++ * old one is already closed, so the caller is holding an empty drive and must
++ * say so rather than pretend. */
++int
++opera_lr_swap_disc(const char *path_)
++{
++  int rv;
++
++  retro_cdimage_close(&CDIMAGE);
++  rv = retro_cdimage_open(path_,&CDIMAGE);
++  if(rv == -1)
++    return -1;
++
++  CDIMAGE_SECTOR = 0;
++
++  return 0;
++}
++
+ static
+ void
+ cdimage_read_sector(void  *buf_,
+@@ -667,10 +696,17 @@ static
  void
  retro_reset_core(retro_reset_flags_t flags_)
  {
@@ -79,7 +115,7 @@ index 27e7f9d..35726c9 100644
  
    opera_3do_destroy();
    opera_lr_opts_reset();
-@@ -679,9 +686,8 @@ retro_reset_core(retro_reset_flags_t flags_)
+@@ -679,9 +715,8 @@ retro_reset_core(retro_reset_flags_t flags_)
    opera_3do_init(libopera_callback);
    cdimage_set_sector(0);
  

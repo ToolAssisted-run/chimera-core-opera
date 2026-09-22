@@ -58,6 +58,12 @@ struct gate_opts
 	const char *dumpPath;       /* ...into this file (the frontend gate compares it) */
 	const char *savedataDir;    /* optional: write every savedata export here after the run */
 	int turbo;            /* nonzero: draw nothing for the first half of the run */
+	/* Scripted presses: --press <frame>:<count>:<wire index>, repeatable. The
+	 * movie line format only reaches reset and the two pads, so a console
+	 * button that is neither - the disc buttons at 1 and 2 - has no other way
+	 * to be pressed. */
+	struct { long first, count; int index; } press[8];
+	int presses;
 	long turboSettle;     /* frames to let the picture settle before hashing it */
 };
 
@@ -229,6 +235,11 @@ static int gate_run(const struct gate_core *c, const struct gate_opts *o)
 		else if (o->exercise)
 			gate_exercise_pad(f, buttons);
 
+		for (int pi = 0; pi < o->presses; pi++)
+			if (f >= o->press[pi].first && f < o->press[pi].first + o->press[pi].count
+				&& o->press[pi].index >= 0 && o->press[pi].index < GATE_BTN_COUNT)
+				buttons[o->press[pi].index] = 1;
+
 		/* turbo: draw nothing for the first half of the run, then draw the
 		 * second half normally. The second half's pictures are what the
 		 * turbo leg compares - one final frame would not do, because a
@@ -344,6 +355,20 @@ static int gate_parse_opts(int argc, char **argv, int first, struct gate_opts *o
 		else if (!strcmp(argv[i], "--ctl2") && i + 1 < argc) o->ctl2 = argv[++i];
 		else if (!strcmp(argv[i], "--screenshot") && i + 1 < argc) o->screenshotPath = argv[++i];
 		else if (!strcmp(argv[i], "--exercise")) o->exercise = 1;
+		else if (!strcmp(argv[i], "--press") && i + 1 < argc)
+		{
+			long first = 0, count = 0; int index = -1;
+			if (o->presses >= 8) { fprintf(stderr, "too many --press\n"); return 0; }
+			if (sscanf(argv[++i], "%ld:%ld:%d", &first, &count, &index) != 3)
+			{
+				fprintf(stderr, "--press wants <frame>:<count>:<wire index>\n");
+				return 0;
+			}
+			o->press[o->presses].first = first;
+			o->press[o->presses].count = count;
+			o->press[o->presses].index = index;
+			o->presses++;
+		}
 		else if (!strcmp(argv[i], "--dump-domain") && i + 2 < argc) { o->dumpDomain = argv[++i]; o->dumpPath = argv[++i]; }
 		else if (!strcmp(argv[i], "--savedata-out") && i + 1 < argc) o->savedataDir = argv[++i];
 

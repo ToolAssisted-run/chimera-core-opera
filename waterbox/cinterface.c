@@ -35,6 +35,8 @@ extern void opera_lr_callbacks_set_environment(retro_environment_t cb);
 extern void opera_lr_callbacks_set_input_poll(retro_input_poll_t cb);
 extern void opera_lr_callbacks_set_input_state(retro_input_state_t cb);
 extern void opera_lr_callbacks_set_video_refresh(retro_video_refresh_t cb);
+/* Chimera: swap the disc's data source, telling the machine nothing (libretro.c) */
+extern int opera_lr_swap_disc(const char *path);
 extern int opera_input_ports_read; /* patched opera_madam.c raises it on PBus DMA */
 
 /* The one file this machine keeps, in and out under the same name. */
@@ -539,13 +541,41 @@ ECL_EXPORT void FrameAdvance(uint64_t packed)
 	g_nsamples = 0;
 	g_lastFrame = NULL;
 
-	/* disc swapping is declared on the wire but lands with the multi-disc
-	 * milestone (upstream has no public swap entry point yet); the pending
-	 * index is tracked so the wire is stable */
+	/* Disc swapping, in its BARE form: the data source is closed and another
+	 * opened, and the 3DO is told nothing at all - no lid, no media-change
+	 * status, no table-of-contents re-read.
+	 *
+	 * That is on purpose, and it is a question rather than a finished
+	 * feature. A game asking for its next disc may notice the new one by
+	 * itself, because it re-reads what it needs when it needs it; or it may
+	 * have to be told, the way a Dreamcast has to see its lid open. Adding a
+	 * notification first would make a working swap look like proof that the
+	 * notification was needed, and we would never learn which it was. So:
+	 * the smallest thing that could work, measured on a real game, and the
+	 * mechanism added only if the measurement asks for it.
+	 *
+	 * Acted on the PRESS. The index is machine state and travels in the
+	 * savestate, so a movie that swaps replays the swap. */
 	if (g_discCount > 1)
 	{
-		if (g_buttons[1] && !g_prevDiscBtn[0]) { /* previous: reserved */ }
-		if (g_buttons[2] && !g_prevDiscBtn[1]) { /* next: reserved */ }
+		const int wantPrev = g_buttons[1] && !g_prevDiscBtn[0];
+		const int wantNext = g_buttons[2] && !g_prevDiscBtn[1];
+		if (wantPrev || wantNext)
+		{
+			const int was = g_discIndex;
+			g_discIndex = wantNext
+				? (g_discIndex + 1) % g_discCount
+				: (g_discIndex + g_discCount - 1) % g_discCount;
+			if (opera_lr_swap_disc(g_discs[g_discIndex]) != 0)
+			{
+				/* the drive is empty now: say which disc would not open
+				 * rather than leave a machine reading nothing in silence */
+				fprintf(stderr, "opera: disc %d (%s) will not open; the drive is empty\n",
+					g_discIndex, g_discs[g_discIndex]);
+				g_discIndex = was;
+				opera_lr_swap_disc(g_discs[g_discIndex]);
+			}
+		}
 		g_prevDiscBtn[0] = g_buttons[1];
 		g_prevDiscBtn[1] = g_buttons[2];
 	}
