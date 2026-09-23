@@ -1,3 +1,129 @@
+diff --git a/libopera/opera_cdrom.c b/libopera/opera_cdrom.c
+index 2b13de2..45da4a3 100644
+--- a/libopera/opera_cdrom.c
++++ b/libopera/opera_cdrom.c
+@@ -3258,6 +3258,73 @@ cdrom_cmd_diagnostics(cdrom_device_t *cd_)
+   cdrom_status_tagged_error(cd_,CDROM_CMD_DIAGNOSTICS,MEI_CDROM_illegal_request);
+ }
+ 
++
++/* Chimera: a new disc the host has not been told about yet. Armed when the
++ * tray closes and spent on the host's next command - see opera_cdrom_do_cmd.
++ * Ordinary machine memory, so a savestate carries it. */
++static bool g_chimera_media_changed = false;
++
++/* Chimera: the tray, opened and closed by a PERSON rather than by a command.
++ *
++ * The state changes are the drive's own EJECT and INJECT commands', and the
++ * host learns of them the way it learns everything else about this drive: from
++ * the status byte every reply carries, and from the "medium changed" attention
++ * raised on the first command after the tray closes (see opera_cdrom_do_cmd).
++ *
++ * WHAT IS DELIBERATELY NOT RAISED is the media access latch, POLRE, which is
++ * what the first version raised on both halves. Traced on Supreme Warrior with
++ * the tray opened at power-on and closed at frame 300: with POLRE the console
++ * never sent the drive another command and never booted the disc; without it,
++ * the BIOS polled READ_ID, watched the status go from "no disc" to "disc in",
++ * re-read the disc info, the TOC and the session, and read from the new disc.
++ * POLRE never raises an interrupt here, and the only other place it is set is
++ * the drive-emulator path immediately before a full console restart - the OS
++ * reads it as the drive going away, and stops talking to it.
++ *
++ * Closing re-reads the disc layout. Swapping the image underneath without that
++ * left the drive describing disc one - its TOC, its capacity - while it read
++ * sectors from disc two, which is not a disc change but a corrupt disc. */
++void
++opera_cdrom_door_open(cdrom_device_t *cd_)
++{
++
++  /* A read in flight is ANSWERED, not dropped: a real drive whose door opens
++   * mid-read fails the read, and this one fails it with the same "disc out" it
++   * gives a read that arrives with the door already open. Dropping it silently
++   * would leave the host waiting for a status that never comes. No trace taken
++   * so far caught a read in flight at the moment the door opened, so this path
++   * is correct by construction rather than by measurement. */
++  const bool reading = (cd_->blocks_requested != 0) ||
++                       (cd_->data_len != 0) ||
++                       g_CDROM_STATE.data.read_status_pending;
++
++  cdrom_data_clear_transfer(cd_);
++  cd_->xbus_status &= ~CDROM_STATUS_DOOR;
++  cd_->xbus_status &= ~CDROM_STATUS_DISC_IN;
++  cd_->xbus_status &= ~CDROM_STATUS_SPIN_UP;
++  cd_->xbus_status &= ~CDROM_STATUS_DOUBLE_SPEED;
++  cd_->xbus_status &= ~CDROM_STATUS_ERROR;
++  cd_->MEI_status   = MEI_CDROM_no_error;
++  if(reading)
++    cdrom_status_tagged_error(cd_,CDROM_CMD_READ_DATA,MEI_CDROM_disc_out);
++}
++
++void
++opera_cdrom_door_close(cdrom_device_t *cd_)
++{
++
++  cdrom_data_clear_transfer(cd_);
++  cd_->xbus_status |= (CDROM_STATUS_READY |
++                       CDROM_STATUS_DOOR |
++                       CDROM_STATUS_DISC_IN |
++                       CDROM_STATUS_SPIN_UP);
++  cd_->xbus_status &= ~CDROM_STATUS_ERROR;
++  cdrom_mode_apply_drive_speed(cd_);
++  cd_->MEI_status = MEI_CDROM_no_error;
++  opera_cdrom_update_disc_layout(cd_);
++  g_chimera_media_changed = true;
++}
++
+ static
+ void
+ cdrom_cmd_eject_disc(cdrom_device_t *cd_)
+@@ -3987,6 +4054,7 @@ cdrom_cmd_unhandled(cdrom_device_t *cd_)
+ void
+ opera_cdrom_do_cmd(cdrom_device_t *cd_)
+ {
++
+   cd_->status_len = 0;
+ 
+   cd_->poll        &= ~POLST;
+@@ -3997,6 +4065,26 @@ opera_cdrom_do_cmd(cdrom_device_t *cd_)
+   if(cdrom_cmd_is_ode(cd_->cmd[0]))
+     g_CDROM_STATE.ode.savestate_blocked = true;
+ 
++  /* Chimera: THE DISC CHANGED, and the host is told the way a drive tells it.
++   * The first command after the tray closes on a new disc fails ONCE with
++   * "medium changed" - the unit attention CD drives raise on a media change.
++   * MEI_CDROM_media_changed was defined here and never raised by anything.
++   *
++   * To be exact about what is known: the console's OWN disc detection does
++   * not need it. Traced with the tray open at power-on and closed at frame
++   * 300, the BIOS mounted the new disc at frame 368 and read it at 401 with
++   * this attention and without it alike. It is here because it is what the
++   * drive does, it costs that path nothing, and a game's own "insert disc 2"
++   * prompt - which was not traced - may be watching for exactly this.
++   * GET_LAST_STATUS is exempt: its job is to report the last status, not to
++   * consume the attention. */
++  if(g_chimera_media_changed && (cd_->cmd[0] != CDROM_CMD_GET_LAST_STATUS))
++    {
++      g_chimera_media_changed = false;
++      cdrom_status_tagged_error(cd_,cd_->cmd[0],MEI_CDROM_media_changed);
++      return;
++    }
++
+   switch(cd_->cmd[0])
+     {
+     case CDROM_CMD_SEEK:
+diff --git a/libopera/opera_cdrom.h b/libopera/opera_cdrom.h
+index 664bafe..6f6d453 100644
+--- a/libopera/opera_cdrom.h
++++ b/libopera/opera_cdrom.h
+@@ -304,6 +304,8 @@ uint32_t opera_cdrom_state_size(void);
+ uint32_t opera_cdrom_state_save(cdrom_device_t *cd_, void *data_);
+ uint32_t opera_cdrom_state_load(cdrom_device_t *cd_, void const *data_, uint32_t data_size_);
+ void    opera_cdrom_set_speed(uint32_t speed_);
++void    opera_cdrom_door_open(cdrom_device_t *cd_);   /* Chimera: a person opens the tray */
++void    opera_cdrom_door_close(cdrom_device_t *cd_);  /* ...and closes it on a new disc */
+ void    opera_cdrom_send_cmd(cdrom_device_t *cd_, uint8_t val_);
+ void    opera_cdrom_set_poll(cdrom_device_t *cd_, uint32_t val_);
+ int     opera_cdrom_update_fiq(cdrom_device_t *cd_);
 diff --git a/libopera/opera_madam.c b/libopera/opera_madam.c
 index 007980a..50ad478 100644
 --- a/libopera/opera_madam.c
@@ -53,47 +179,85 @@ index e052ed3..83b0816 100644
      g_RENDERER();
  
    g_VDLP.prev_bmp = ((g_VDLP.clut_ctrl.cdcw.prev_fba_tick) ?
+diff --git a/libopera/opera_xbus_cdrom_plugin.c b/libopera/opera_xbus_cdrom_plugin.c
+index 860920d..83c1f7a 100644
+--- a/libopera/opera_xbus_cdrom_plugin.c
++++ b/libopera/opera_xbus_cdrom_plugin.c
+@@ -52,3 +52,16 @@ xbus_cdrom_plugin(int   proc_,
+ 
+   return NULL;
+ }
++
++/* Chimera: the tray, for the host - see opera_cdrom_door_open */
++void
++opera_xbus_cdrom_door_open(void)
++{
++  opera_cdrom_door_open(&g_CDROM_DEVICE);
++}
++
++void
++opera_xbus_cdrom_door_close(void)
++{
++  opera_cdrom_door_close(&g_CDROM_DEVICE);
++}
+diff --git a/libopera/opera_xbus_cdrom_plugin.h b/libopera/opera_xbus_cdrom_plugin.h
+index 80ae438..27bbd67 100644
+--- a/libopera/opera_xbus_cdrom_plugin.h
++++ b/libopera/opera_xbus_cdrom_plugin.h
+@@ -3,4 +3,7 @@
+ 
+ void* xbus_cdrom_plugin(int proc_, void* data_);
+ 
++void opera_xbus_cdrom_door_open(void);
++void opera_xbus_cdrom_door_close(void);
++
+ #endif /* LIBOPERA_XBUS_CDROM_PLUGIN_H_INCLUDED */
 diff --git a/libretro.c b/libretro.c
-index 27e7f9d..16643fe 100644
+index 27e7f9d..3bbca68 100644
 --- a/libretro.c
 +++ b/libretro.c
-@@ -169,6 +169,35 @@ cdimage_set_sector(const uint32_t sector_)
+@@ -18,6 +18,7 @@
+ #include "libopera/opera_arm.h"
+ #include "libopera/opera_bios.h"
+ #include "libopera/opera_cdrom.h"
++#include "libopera/opera_xbus_cdrom_plugin.h"
+ #include "libopera/opera_clock.h"
+ #include "libopera/opera_core.h"
+ #include "libopera/opera_log.h"
+@@ -169,6 +170,32 @@ cdimage_set_sector(const uint32_t sector_)
    CDIMAGE_SECTOR = sector_;
  }
  
-+/* Chimera: the data source, swapped for another, and NOTHING else.
++/* Chimera: the tray. Opening it is only the drive reporting the door open and
++ * the disc gone; closing it puts a NEW image behind the drive and then reports
++ * door closed, disc in, spun up - which re-reads the disc layout from the new
++ * image. The first version swapped the image and said nothing, and a game
++ * waiting for its next disc (Supreme Warrior) never noticed, because nothing
++ * about the drive had changed.
 + *
-+ * The disc is whatever CDIMAGE reads from, so pointing it at a different
-+ * image is the whole of a swap as far as the host is concerned. What this
-+ * deliberately does NOT do is tell the 3DO anything: no lid, no media-change
-+ * status, no table-of-contents re-read. That is the question being asked -
-+ * whether a game that is waiting for its next disc picks the new one up on
-+ * its own, or whether it has to be told. Answering it needs the bare version
-+ * first; a notification added before we know would make a working swap look
-+ * like proof of a mechanism nobody had shown was necessary.
-+ *
-+ * Returns 0 on success, -1 if the new image will not open - in which case the
-+ * old one is already closed, so the caller is holding an empty drive and must
-+ * say so rather than pretend. */
-+int
-+opera_lr_swap_disc(const char *path_)
++ * Closing returns 0, or -1 if the image will not open - in which case the tray
++ * stays OPEN with no disc, rather than the drive claiming one it cannot read. */
++void
++opera_lr_door_open(void)
 +{
-+  int rv;
++  opera_xbus_cdrom_door_open();
++}
 +
++int
++opera_lr_door_close(const char *path_)
++{
 +  retro_cdimage_close(&CDIMAGE);
-+  rv = retro_cdimage_open(path_,&CDIMAGE);
-+  if(rv == -1)
++  if(retro_cdimage_open(path_,&CDIMAGE) == -1)
 +    return -1;
-+
 +  CDIMAGE_SECTOR = 0;
-+
++  opera_xbus_cdrom_door_close();
 +  return 0;
 +}
 +
  static
  void
  cdimage_read_sector(void  *buf_,
-@@ -667,10 +696,17 @@ static
+@@ -667,10 +694,17 @@ static
  void
  retro_reset_core(retro_reset_flags_t flags_)
  {
@@ -115,7 +279,7 @@ index 27e7f9d..16643fe 100644
  
    opera_3do_destroy();
    opera_lr_opts_reset();
-@@ -679,9 +715,8 @@ retro_reset_core(retro_reset_flags_t flags_)
+@@ -679,9 +713,8 @@ retro_reset_core(retro_reset_flags_t flags_)
    opera_3do_init(libopera_callback);
    cdimage_set_sector(0);
  

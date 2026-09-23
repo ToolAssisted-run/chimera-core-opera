@@ -18,7 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define GATE_BTN_COUNT (3 + 2 * 42)
+/* ...and the tray after both ports: count it, or --press drops it silently */
+#define GATE_BTN_COUNT (3 + 2 * 42 + 1)
 
 struct gate_core
 {

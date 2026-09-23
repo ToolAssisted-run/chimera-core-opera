@@ -36,7 +36,8 @@ extern void opera_lr_callbacks_set_input_poll(retro_input_poll_t cb);
 extern void opera_lr_callbacks_set_input_state(retro_input_state_t cb);
 extern void opera_lr_callbacks_set_video_refresh(retro_video_refresh_t cb);
 /* Chimera: swap the disc's data source, telling the machine nothing (libretro.c) */
-extern int opera_lr_swap_disc(const char *path);
+extern void opera_lr_door_open(void);
+extern int opera_lr_door_close(const char *path);
 extern int opera_input_ports_read; /* patched opera_madam.c raises it on PBus DMA */
 
 /* The one file this machine keeps, in and out under the same name. */
@@ -60,7 +61,9 @@ static int g_inited;
  * how the author's BizHawk core keyed its controller definition. */
 #define BTN_PORT_BASE 3
 #define BTN_PER_PORT 42
-#define BTN_COUNT (BTN_PORT_BASE + 2 * BTN_PER_PORT)
+/* the tray, AFTER both ports so no controller's numbering moved when it came */
+#define BTN_DISC_SWAP (BTN_PORT_BASE + 2 * BTN_PER_PORT)
+#define BTN_COUNT (BTN_DISC_SWAP + 1)
 #define AXES_PER_PORT 9
 #define AXIS_COUNT (2 * AXES_PER_PORT)
 
@@ -101,8 +104,10 @@ static char g_fontName[64] = "None";
 #define MAX_DISCS 32
 static char g_discs[MAX_DISCS][256];
 static int g_discCount;
-static int g_discIndex;
+static int g_discIndex;     /* what is in the drive */
+static int g_discSelected;  /* what the next close of the tray puts there */
 static uint8_t g_prevDiscBtn[2];
+static uint8_t g_trayWasOpen;
 
 /* ---- video: the core renders XRGB8888 into its own buffer and hands it
  * over per refresh; the ABI serves a packed opaque copy ---- */
@@ -462,6 +467,7 @@ ECL_EXPORT int Init(void)
 		g_discCount = 1;
 	}
 	g_discIndex = 0;
+	g_discSelected = 0;
 
 	/* the BIOS must be mounted, or the boot is a silent black screen */
 	{
@@ -541,43 +547,71 @@ ECL_EXPORT void FrameAdvance(uint64_t packed)
 	g_nsamples = 0;
 	g_lastFrame = NULL;
 
-	/* Disc swapping, in its BARE form: the data source is closed and another
-	 * opened, and the 3DO is told nothing at all - no lid, no media-change
-	 * status, no table-of-contents re-read.
+	/* Disc swapping, with a TRAY the game can see.
 	 *
-	 * That is on purpose, and it is a question rather than a finished
-	 * feature. A game asking for its next disc may notice the new one by
-	 * itself, because it re-reads what it needs when it needs it; or it may
-	 * have to be told, the way a Dreamcast has to see its lid open. Adding a
-	 * notification first would make a working swap look like proof that the
-	 * notification was needed, and we would never learn which it was. So:
-	 * the smallest thing that could work, measured on a real game, and the
-	 * mechanism added only if the measurement asks for it.
+	 * The first version was the bare form on purpose - swap the data source,
+	 * tell the 3DO nothing - as a question: does a game waiting for its next
+	 * disc notice the new one by itself? The user measured it on Supreme
+	 * Warrior (2026-09-23). The swap did reach the machine - swapping mid-load
+	 * crashed it - but the game never took its next disc. It waits for the
+	 * drive to SAY the disc changed. So the question was worth asking and its
+	 * answer is: it has to be told.
 	 *
-	 * Acted on the PRESS. The index is machine state and travels in the
-	 * savestate, so a movie that swaps replays the swap. */
+	 * The selector, the disc in the drive and whether the tray is open are all
+	 * machine state and travel in the savestate, so a movie that swaps
+	 * replays the swap. */
 	if (g_discCount > 1)
 	{
+		/* PREVIOUS and NEXT are a selector: they choose, and touch no
+		 * hardware. They wrap both ways, because a selector that runs off
+		 * the end is issue #47 - past the last disc it quietly came back to
+		 * the first, and nothing could reach disc two again. */
 		const int wantPrev = g_buttons[1] && !g_prevDiscBtn[0];
 		const int wantNext = g_buttons[2] && !g_prevDiscBtn[1];
+		if (wantPrev)
+			g_discSelected = (g_discSelected + g_discCount - 1) % g_discCount;
+		if (wantNext)
+			g_discSelected = (g_discSelected + 1) % g_discCount;
+		/* which disc is selected is otherwise invisible */
 		if (wantPrev || wantNext)
-		{
-			const int was = g_discIndex;
-			g_discIndex = wantNext
-				? (g_discIndex + 1) % g_discCount
-				: (g_discIndex + g_discCount - 1) % g_discCount;
-			if (opera_lr_swap_disc(g_discs[g_discIndex]) != 0)
-			{
-				/* the drive is empty now: say which disc would not open
-				 * rather than leave a machine reading nothing in silence */
-				fprintf(stderr, "opera: disc %d (%s) will not open; the drive is empty\n",
-					g_discIndex, g_discs[g_discIndex]);
-				g_discIndex = was;
-				opera_lr_swap_disc(g_discs[g_discIndex]);
-			}
-		}
+			fprintf(stderr, "opera: disc selector: %d of %d (%s)\n",
+				g_discSelected + 1, g_discCount, g_discs[g_discSelected]);
 		g_prevDiscBtn[0] = g_buttons[1];
 		g_prevDiscBtn[1] = g_buttons[2];
+
+		/* DISC SWAP is the tray. Held, it is open: the drive reports the
+		 * door open and no disc, and raises its media attention. Released,
+		 * the SELECTED disc goes in and the drive reports it - door closed,
+		 * disc in, spun up, layout re-read. A game waiting for its next disc
+		 * watches for exactly that; swapping the image with the drive saying
+		 * nothing, which is what the first version did, it never noticed.
+		 *
+		 * Both halves in one frame would be no swap at all - the game polls,
+		 * and a tray that opened and shut between two polls never opened. So
+		 * how long the tray stays open is how long the button is held, which
+		 * is the player's decision and belongs in the movie. With the
+		 * selector untouched the tray takes the next disc, so the button on
+		 * its own still steps through them. */
+		const uint8_t open = g_buttons[BTN_DISC_SWAP];
+		if (open != g_trayWasOpen)
+		{
+			g_trayWasOpen = open;
+			if (open)
+				opera_lr_door_open();
+			else
+			{
+				if (g_discSelected == g_discIndex)
+					g_discSelected = (g_discIndex + 1) % g_discCount;
+				if (opera_lr_door_close(g_discs[g_discSelected]) == 0)
+					g_discIndex = g_discSelected;
+				else
+					/* the tray stays open and empty: a drive that believes it
+					 * has a disc it cannot read is worse than one that knows
+					 * it is empty */
+					fprintf(stderr, "opera: disc %d (%s) will not open; the tray stays open\n",
+						g_discSelected + 1, g_discs[g_discSelected]);
+			}
+		}
 	}
 
 	/* Reset is the console button, exactly as the author's BizHawk core:

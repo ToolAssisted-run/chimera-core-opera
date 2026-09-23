@@ -19,7 +19,8 @@
 			"P1 B": "X, J1 B2, X1 A",
 			"P1 C": "C, J1 B4, X1 Y",
 			"P1 L": "W, J1 B5, X1 LeftShoulder",
-			"P1 R": "E, J1 B6, X1 RightShoulder"
+			"P1 R": "E, J1 B6, X1 RightShoulder",
+			"Disc Swap": "Slash"
 		}
 	}
 }
