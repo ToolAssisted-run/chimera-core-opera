@@ -136,3 +136,56 @@ build over miniBox, C only; package via build-package.sh).
   swapping (wire reserved; upstream has no public swap entry point yet -
   cdimage_ode_launch is static), the exotic input devices are wired but
   untested against real games, CI first run.
+
+## A disc change is a dipir, and the 3DO reboots into the new disc (2026-09-23)
+
+Supreme Warrior (two discs) never took its second disc: the tray opened and
+closed, the drive reported the new disc, and nothing happened. No 3DO
+emulator handles this (BizHawk #4708 is the same symptom in Opera). The
+Portfolio OS source (github.com/trapexit/portfolio_os, 1995) says what the
+console actually does, and the BIOS disassembly confirms it:
+
+1. The drive raises XBUS poll bit 0x80 - `XBUS_POLL_MEDIA_ACCESS` in the OS's
+   clio.h; this tree calls it POLRE. Nothing raised it.
+2. The OS sees it the next time it takes the bus (`GrabXBus`,
+   app/oper/xbusdevice.c), stops video and DMA (`Duck`) and calls
+   `SoftReset()`: push registers, write CSTAT `SOFTRES|CLRDIP` (0x30), a slide
+   of no-ops, pop them, return with the ROM's answer in r0.
+3. The soft reset is the ARM's reset EXCEPTION - registers and memory kept,
+   r14_svc pointing back into that slide, the primary ROM mapped. The ROM's
+   reset handler reads CSTAT and takes its dipir path only when it reads
+   DIPIR_RESET (0x40; 1 or 2 is a cold boot, anything else hangs). Dipir keeps
+   the incoming lr and returns to it (`ldmia sp!,{sp,pc}^`, dipir/dipir.s).
+4. Dipir reads the new disc and decides. A disc the running title will share
+   (its volume label marked as a data disc, or the title's binary marked
+   `_3DO_DATADISCOK`) is handed back to the OS, which completes its "wait for
+   dipir end" requests. Anything else is rebooted into: `hardboot()` drives
+   ADBIO pin 3, the watchdog reset output, and the console comes up on the
+   new disc. Supreme Warrior's discs carry no data-disc flag, so with this OS
+   a swap reboots into the other disc - as a real 3DO does.
+
+Opera had none of the four. Now (libopera, in the hooks patch):
+
+- closing the tray on a disc latches media access (`opera_cdrom_door_close`);
+- a CSTAT soft reset sets DIPIR_RESET and is taken at the end of the storing
+  instruction as the reset exception (`arm_soft_reset_exception`) - it used to
+  re-initialise the whole machine, a power cycle the OS cannot come back from;
+- ADBIO pin 3 driven high asks for a hardware reset, taken between frames by
+  the frontend's own reset (`retro_reset_core`, NVRAM kept). An in-place
+  re-initialisation was tried first and is not a power-on: the ROM rebooted
+  into the new disc and stalled in its logo;
+- a reset drive forgets a pending "medium changed" (it is a file-level static,
+  and it survived the reset: the first command after power-on failed).
+
+**Measured** (tests/run-roms.sh, leg `disc:swap`, Supreme Warrior with the
+real panafz1 BIOS): the tray opened at frame 5000 on disc 1 and closed on
+disc 2 a second later; at frame 16000 the picture is byte-identical to a
+direct boot of disc 2 at frame 12000 (its gong menu, at the Wind location),
+native == sandbox. With media access disabled the leg fails ("not where
+booting the second disc puts it"); the leg also refuses params under which a
+run that never swapped already shows the second disc.
+
+**Not yet seen:** the game's own "insert the other disc" prompt (choosing a
+disc-2 opponent from disc 1). What the console does there is the same dipir,
+so the same reboot is expected; whether the game then resumes where it asked
+(the manual says either disc can start it) is what the user's test will show.

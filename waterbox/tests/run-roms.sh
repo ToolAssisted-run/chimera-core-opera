@@ -92,6 +92,49 @@ PYSET
 	fi
 done
 
+# disc:swap - a disc change taken the way the console takes it. The OS sees
+# the drive's media-access bit, soft-resets into the ROM's dipir, dipir finds
+# a disc the running title will not share and reboots the machine through the
+# watchdog pin, and the console comes up on the new disc. The witness is the
+# picture: a machine that swapped discs mid-game must end up exactly where a
+# machine that booted the second disc does, native and sandboxed alike.
+#
+# tests/roms-local/swap/ holds the first disc, then the second (in that order
+# by name - symlinks do), and a file "params" with three frame counts for that
+# game: swapAt (the tray opens there, for one second), after (the swapped run's
+# length) and direct (the direct boot's), each landing on a static screen.
+swapdir="$romdir/swap"
+if [ ! -f "$swapdir/params" ]; then
+	report "disc:swap" SKIP "tests/roms-local/swap/: two discs' .cue files and a params file"
+elif [ ! -f "$fwdir/panafz1.bin" ]; then
+	report "disc:swap" SKIP "drop 'panafz1.bin' into tests/firmware-local/"
+else
+	. "$swapdir/params"
+	mapfile -t cues < <(cd "$swapdir" && ls *.cue | sort)
+	wd="$work/swap"
+	mkdir -p "$wd"
+	for f in "$swapdir"/*.cue "$swapdir"/*.bin; do ln -s "$(readlink -f "$f")" "$wd/$(basename "$f")"; done
+	cp "$fwdir/panafz1.bin" "$wd/"
+	swapBtn=87 # Disc Swap: after both ports' controls
+	printf '{"cd":["%s","%s"]}' "${cues[0]}" "${cues[1]}" > "$wd/slots"
+	"$nat/run-native" "$wd" --frames "$after" --press "$swapAt:60:$swapBtn" --screenshot "$work/swap-nat.tga" >/dev/null 2>&1
+	"$nat/run-wbx" "$gst/core.wbx" "$wd" --frames "$after" --press "$swapAt:60:$swapBtn" --screenshot "$work/swap-box.tga" >/dev/null 2>&1
+	"$nat/run-native" "$wd" --frames "$after" --screenshot "$work/stay.tga" >/dev/null 2>&1
+	printf '{"cd":["%s"]}' "${cues[1]}" > "$wd/slots"
+	"$nat/run-native" "$wd" --frames "$direct" --screenshot "$work/direct.tga" >/dev/null 2>&1
+	if [ ! -s "$work/direct.tga" ] || [ ! -s "$work/swap-nat.tga" ]; then
+		report "disc:swap" FAIL "a run produced no picture"
+	elif cmp -s "$work/stay.tga" "$work/direct.tga"; then
+		report "disc:swap" FAIL "the run that never swapped already shows the second disc's screen: params prove nothing"
+	elif ! cmp -s "$work/swap-nat.tga" "$work/direct.tga"; then
+		report "disc:swap" FAIL "after the swap the machine is not where booting the second disc puts it"
+	elif ! cmp -s "$work/swap-nat.tga" "$work/swap-box.tga"; then
+		report "disc:swap" FAIL "native and sandbox differ after the swap"
+	else
+		report "disc:swap" PASS "swapped at $swapAt, rebooted into the second disc: frame $after == its direct boot at $direct, native == sandbox"
+	fi
+fi
+
 echo ""
 echo "$ok ok, $failed failed, $skipped skipped"
 [ "$failed" -gt 0 ] && exit 1

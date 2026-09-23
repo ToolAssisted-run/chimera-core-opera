@@ -1,16 +1,162 @@
+diff --git a/libopera/opera_3do.c b/libopera/opera_3do.c
+index cbd5949..de2b7da 100644
+--- a/libopera/opera_3do.c
++++ b/libopera/opera_3do.c
+@@ -149,6 +149,28 @@ opera_3do_destroy()
+   opera_xbus_destroy();
+ }
+ 
++/* Chimera: a hardware reset asked for while the machine runs (the watchdog
++   pin, opera_clio.c). It is taken between frames, by the frontend's own
++   reset (retro_reset_core): the machine it leaves is the one a power-on
++   leaves, which an in-place re-initialisation was not - after one, the boot
++   ROM rebooted into the new disc and stalled in its logo, where a power-on
++   into the same disc reached the game. */
++static int g_HARD_RESET_REQUESTED = 0;
++
++void
++opera_3do_request_hard_reset(void)
++{
++  g_HARD_RESET_REQUESTED = 1;
++}
++
++int
++opera_3do_consume_hard_reset(void)
++{
++  int requested = g_HARD_RESET_REQUESTED;
++  g_HARD_RESET_REQUESTED = 0;
++  return requested;
++}
++
+ void
+ opera_3do_soft_reset(void)
+ {
+diff --git a/libopera/opera_3do.h b/libopera/opera_3do.h
+index e9d3867..e8d8d0a 100644
+--- a/libopera/opera_3do.h
++++ b/libopera/opera_3do.h
+@@ -15,6 +15,8 @@ int      opera_3do_init(opera_ext_interface_t callback);
+ void     opera_3do_destroy(void);
+ 
+ void     opera_3do_soft_reset(void);
++void     opera_3do_request_hard_reset(void);
++int      opera_3do_consume_hard_reset(void);
+ void     opera_3do_process_frame(void);
+ 
+ #endif /* LIBOPERA_3DO_H_INCLUDED */
+diff --git a/libopera/opera_arm.c b/libopera/opera_arm.c
+index 2f385dc..7e80039 100644
+--- a/libopera/opera_arm.c
++++ b/libopera/opera_arm.c
+@@ -140,6 +140,7 @@ static int        g_SWI_HLE;
+ static arm_core_t CPU;
+ static int        CYCLES;	//cycle counter
+ static bool       g_SOFT_RESET_PENDING = false;
++static bool       g_HARD_RESET_TAKEN = false;
+ static uint32_t   carry_out = 0;
+ 
+ static uint32_t readusr(uint32_t const rn);
+@@ -950,6 +951,34 @@ typedef struct TagArg
+ } TagItem;
+ 
+ 
++/* Chimera: a CLIO soft reset, as the hardware takes it - the ARM's reset
++ * exception, and nothing else. It used to re-initialise the whole machine
++ * (CPU registers zeroed, video, MADAM, XBUS, CLIO and DSP), which is a power
++ * cycle, and the one program that writes it cannot survive one: Portfolio's
++ * SoftReset() (app/oper/softreset.s) pushes its registers, writes SOFTRES,
++ * runs a slide of no-ops and pops them again, expecting to come back with
++ * the ROM's dipir result in r0. The ROM's dipir keeps the incoming r14_svc
++ * and returns to it with ldmia {sp,pc}^ (dipir/dipir.s), after copying
++ * itself into low memory the OS keeps free for it. So: registers and memory
++ * kept, the return address in r14_svc, SVC mode with interrupts off, and
++ * the ROM's reset entry, with the primary ROM mapped. */
++static
++void
++arm_soft_reset_exception(void)
++{
++  CPU.SPSR[arm_mode_table[0x13]] = CPU.CPSR;
++
++  SETF(1);
++  SETI(1);
++  SETM(0x13);
++
++  CPU.USER[14] = CPU.USER[15];
++  CPU.USER[15] = ARM_INITIAL_PC;
++  /* the reset maps the primary ROM back in; dipir saves the ADBIO select
++   * the OS had and restores it on the way out (dipir/cdipir.c) */
++  opera_mem_rom_select(ROM1);
++}
++
+ static
+ void
+ decode_swi_lle(void)
+@@ -1834,6 +1863,10 @@ opera_arm_execute(void)
+   if(g_SOFT_RESET_PENDING)
+     {
+       g_SOFT_RESET_PENDING = false;
++      if(g_HARD_RESET_TAKEN)
++        g_HARD_RESET_TAKEN = false;
++      else
++        arm_soft_reset_exception();
+       return -CYCLES;
+     }
+ 
+@@ -1882,10 +1915,23 @@ mwritew(uint32_t const addr_,
+           return;
+         }
+ 
+-      if(opera_clio_poke(index,val_))
++      /* Chimera: the reset is taken at the end of this instruction, where
++       * the program counter is known (arm_soft_reset_exception) */
++      switch(opera_clio_poke(index,val_))
+         {
++        case OPERA_CLIO_SOFT_RESET:
++          g_SOFT_RESET_PENDING = true;
++          break;
++        case OPERA_CLIO_HARD_RESET:
++          /* the whole machine, as at power-on: nothing of this
++           * instruction survives, so no exception is taken after it */
++          /* taken whole between frames (opera_3do_request_hard_reset);
++           * until then the CPU waits at the reset entry */
++          opera_3do_request_hard_reset();
+           opera_3do_soft_reset();
+           g_SOFT_RESET_PENDING = true;
++          g_HARD_RESET_TAKEN = true;
++          break;
+         }
+       return;
+    }
 diff --git a/libopera/opera_cdrom.c b/libopera/opera_cdrom.c
-index 2b13de2..45da4a3 100644
+index 2b13de2..a6c6936 100644
 --- a/libopera/opera_cdrom.c
 +++ b/libopera/opera_cdrom.c
-@@ -3258,6 +3258,73 @@ cdrom_cmd_diagnostics(cdrom_device_t *cd_)
+@@ -316,6 +316,12 @@ static uint32_t MSF2LBA(const msf_t *msf_);
+ static void cdrom_data_clear_transfer(cdrom_device_t *cd_);
+ static void ode_file_buffer_write_reset(void);
+ static void ode_complete_restart_if_armed(cdrom_device_t *cd_);
++
++/* Chimera: a new disc the host has not been told about yet. Armed when the
++ * tray closes and spent on the host's next command - see opera_cdrom_do_cmd.
++ * Ordinary machine memory, so a savestate carries it. A drive that is
++ * reset (at power-on, or by the watchdog after dipir) has none. */
++static bool g_chimera_media_changed = false;
+ static bool cdrom_persona_is_portfolio_native_mei(void);
+ 
+ static
+@@ -2648,6 +2654,7 @@ opera_cdrom_init(cdrom_device_t *cd_)
+ 
+   cdrom_mode_reset(cd_);
+   cd_->MEI_status = MEI_CDROM_no_error;
++  g_chimera_media_changed = false;
+ 
+   opera_cdrom_update_disc_layout(cd_);
+   ode_reset_session();
+@@ -3258,6 +3265,75 @@ cdrom_cmd_diagnostics(cdrom_device_t *cd_)
    cdrom_status_tagged_error(cd_,CDROM_CMD_DIAGNOSTICS,MEI_CDROM_illegal_request);
  }
  
 +
-+/* Chimera: a new disc the host has not been told about yet. Armed when the
-+ * tray closes and spent on the host's next command - see opera_cdrom_do_cmd.
-+ * Ordinary machine memory, so a savestate carries it. */
-+static bool g_chimera_media_changed = false;
 +
 +/* Chimera: the tray, opened and closed by a PERSON rather than by a command.
 + *
@@ -71,12 +217,18 @@ index 2b13de2..45da4a3 100644
 +  cd_->MEI_status = MEI_CDROM_no_error;
 +  opera_cdrom_update_disc_layout(cd_);
 +  g_chimera_media_changed = true;
++  /* The drive asks for a dipir: XBUS poll bit 0x80, "media access" in
++   * Portfolio's clio.h (this file's POLRE). The OS notices it the next
++   * time it takes the bus, soft-resets into the ROM, and the ROM's dipir
++   * authenticates the new disc and returns - which is the event a
++   * multi-disc title waits for (XBUS "wait for dipir end"). */
++  cdrom_media_access_latch(cd_);
 +}
 +
  static
  void
  cdrom_cmd_eject_disc(cdrom_device_t *cd_)
-@@ -3987,6 +4054,7 @@ cdrom_cmd_unhandled(cdrom_device_t *cd_)
+@@ -3987,6 +4063,7 @@ cdrom_cmd_unhandled(cdrom_device_t *cd_)
  void
  opera_cdrom_do_cmd(cdrom_device_t *cd_)
  {
@@ -84,7 +236,7 @@ index 2b13de2..45da4a3 100644
    cd_->status_len = 0;
  
    cd_->poll        &= ~POLST;
-@@ -3997,6 +4065,26 @@ opera_cdrom_do_cmd(cdrom_device_t *cd_)
+@@ -3997,6 +4074,26 @@ opera_cdrom_do_cmd(cdrom_device_t *cd_)
    if(cdrom_cmd_is_ode(cd_->cmd[0]))
      g_CDROM_STATE.ode.savestate_blocked = true;
  
@@ -124,6 +276,66 @@ index 664bafe..6f6d453 100644
  void    opera_cdrom_send_cmd(cdrom_device_t *cd_, uint8_t val_);
  void    opera_cdrom_set_poll(cdrom_device_t *cd_, uint32_t val_);
  int     opera_cdrom_update_fiq(cdrom_device_t *cd_);
+diff --git a/libopera/opera_clio.c b/libopera/opera_clio.c
+index a272f00..f1dfdd1 100644
+--- a/libopera/opera_clio.c
++++ b/libopera/opera_clio.c
+@@ -58,6 +58,8 @@
+ #define CSTAT_DIPIR_RESET 0x40
+ 
+ #define WDOG_RESTART      0x0B
++#define ADBIO_WATCHDOG    0x08
++#define ADBIO_WATCHDOG_EN 0x80
+ 
+ struct fifo_s
+ {
+@@ -545,6 +547,15 @@ opera_clio_poke(uint32_t addr_,
+ 
+       opera_clio_set_rom();
+ 
++      /* Chimera: ADBIO pin 3 is the watchdog reset output (Portfolio's
++       * clio.h, ADBIO_WATCHDOG); driving it high as an output resets the
++       * machine. It is how dipir's hardboot() reboots the console into a
++       * disc it will not hand to the running title - a different game, or
++       * the other disc of a multi-disc one - and without it that path spins
++       * on a branch to itself forever. */
++      if((val_ & (ADBIO_WATCHDOG | ADBIO_WATCHDOG_EN)) == (ADBIO_WATCHDOG | ADBIO_WATCHDOG_EN))
++        return OPERA_CLIO_HARD_RESET;
++
+       return 0;
+     }
+   else if(addr_ == 0x0300)
+@@ -646,7 +657,14 @@ opera_clio_poke(uint32_t addr_,
+       CLIO.regs[addr_] = (val_ & ~(CSTAT_SOFT_RESET | CSTAT_CLEAR_DIPIR));
+       if(val_ & CSTAT_CLEAR_DIPIR)
+         CLIO.regs[addr_] &= ~CSTAT_DIPIR_RESET;
+-      return (val_ & CSTAT_SOFT_RESET);
++      /* Chimera: a soft reset is how the OS hands a disc change to the ROM.
++       * Portfolio's GrabXBus sees an XBUS device's media-access bit, stops
++       * video and DMA (Duck) and writes SOFTRES|CLRDIP here; the ROM's reset
++       * handler reads CSTAT and takes its dipir path only when the reason
++       * reads DIPIR_RESET (0x40) - anything else but power-on hangs there. */
++      if(val_ & CSTAT_SOFT_RESET)
++        CLIO.regs[addr_] |= CSTAT_DIPIR_RESET;
++      return ((val_ & CSTAT_SOFT_RESET) ? OPERA_CLIO_SOFT_RESET : 0);
+     }
+   else if(addr_ == 0x2C)
+     {
+diff --git a/libopera/opera_clio.h b/libopera/opera_clio.h
+index 406eede..a5e8632 100644
+--- a/libopera/opera_clio.h
++++ b/libopera/opera_clio.h
+@@ -58,6 +58,10 @@ uint16_t opera_clio_fifo_ei_status(uint8_t channel_);
+ uint16_t opera_clio_fifo_ei_read(uint16_t channel_);
+ 
+ uint32_t opera_clio_peek(uint32_t addr_);
++/* what a write asked of the machine: nothing, the soft reset through which
++ * the OS hands a disc change to the ROM's dipir, or a hardware reset */
++#define OPERA_CLIO_SOFT_RESET 1
++#define OPERA_CLIO_HARD_RESET 2
+ int      opera_clio_poke(uint32_t addr_, uint32_t val_);
+ 
+ void     opera_clio_vcnt_update(int line_, int half_frame_);
 diff --git a/libopera/opera_madam.c b/libopera/opera_madam.c
 index 007980a..50ad478 100644
 --- a/libopera/opera_madam.c
@@ -213,7 +425,7 @@ index 80ae438..27bbd67 100644
 +
  #endif /* LIBOPERA_XBUS_CDROM_PLUGIN_H_INCLUDED */
 diff --git a/libretro.c b/libretro.c
-index 27e7f9d..3bbca68 100644
+index 27e7f9d..3ffed04 100644
 --- a/libretro.c
 +++ b/libretro.c
 @@ -18,6 +18,7 @@
@@ -291,6 +503,19 @@ index 27e7f9d..3bbca68 100644
  }
  
  void
+@@ -758,6 +791,12 @@ retro_run(void)
+   opera_3do_process_frame();
+   if(ode_reset_if_requested())
+     return;
++  /* chimera: the machine reset itself (dipir rebooting into a new disc) */
++  if(opera_3do_consume_hard_reset())
++    {
++      retro_reset_core(RETRO_RESET_FLAG_SAVE_NVRAM);
++      return;
++    }
+ 
+   draw_crosshairs_if_enabled();
+ 
 diff --git a/opera_lr_opts.c b/opera_lr_opts.c
 index 1236fcf..11cdb9a 100644
 --- a/opera_lr_opts.c
