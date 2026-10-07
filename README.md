@@ -20,7 +20,28 @@ canonical dump filenames, driven by the systemType/fontROM settings.
 
 Status and plan: `docs/PLAN.md`.
 
+## Use in Chimera
+
+The core is one file, `opera.chimeraCore`.
+[Chimera](https://github.com/ToolAssisted-run/chimera) downloads nothing: get
+the package from this repository's
+[Releases](https://github.com/ToolAssisted-run/chimera-core-opera/releases)
+page, or build it, and put it in Chimera's `Cores` folder (the folder beside
+`Chimera.exe`, or the one chosen in File > Core Manager > Change folder...).
+File > Core Manager lists what is there. Discs, BIOS and font roms are yours
+to provide.
+
+- [docs/BUILDING.md](docs/BUILDING.md) - how to build the package, install it
+  and run its gates.
+- [AGENTS.md](AGENTS.md) - an operating guide for an AI coding agent working
+  in this repository.
+
 ## Build and test
+
+The short form. It works as written when this repository sits beside a
+Chimera checkout at `$HOME/chimera`: meson looks for miniBox in `../chimera`,
+`setup-guest.sh` in `$HOME/chimera`. For any other layout, and for the
+package and the frontend gate, see [docs/BUILDING.md](docs/BUILDING.md).
 
 ```
 # native reference + sandbox drivers
