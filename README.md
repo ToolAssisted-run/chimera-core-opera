@@ -12,7 +12,7 @@ and the other core repos.
 The integration imitates the author's own BizHawk Opera port
 (`src/BizHawk.Emulation.Cores/Consoles/3DO` + `waterbox/opera`) almost
 verbatim, on a current upstream pin, with upstream kept as clean as possible:
-the whole patch set is ~35 lines (see `patches/` and `docs/PLAN.md`). There
+the whole patch set is one file of hooks (see `patches/` and `docs/PLAN.md`). There
 is no host-side CD plumbing at all - disc images (.iso/.cue/.chd) are
 mounted raw into the guest filesystem and upstream's own VFS reads them. The
 BIOS and font roms arrive through Chimera's firmware channel under opera's
