@@ -1,5 +1,5 @@
 {
-  "_comment": "The core-declared file form for chimera's project wizard: a 3DO project is one or more disc images. The BIOS comes through the firmware page, driven by the systemType setting.",
+  "_comment": "This file lists the kinds of file a 3DO project can hold. Chimera's New Project window is built from it. A project is one or more disc images. The BIOS is asked for on the firmware page, according to the System Type setting.",
   "slots": [
     {
       "id": "cd",
@@ -12,7 +12,7 @@
         "chd",
         "bin"
       ],
-      "help": "3DO disc images: .iso/.bin raw dumps, a .cue sheet whose referenced track files join the project automatically, or a .chd. The first disc is in the drive at boot; the order here is the swap order used by the Previous/Next Disc inputs."
+      "help": "3DO disc images. Each can be a raw dump (.iso or .bin), a .cue file whose track files join the project automatically, or a .chd file. The first disc is in the drive when the machine starts. The order here is the order the Previous Disc and Next Disc inputs go through."
     },
     {
       "id": "savedata",
@@ -22,7 +22,7 @@
       "formats": [
         "ram"
       ],
-      "help": "What the console starts with already remembered. A 3DO keeps saved games and its own settings in NVRAM; this is the file Emulator > Export Save Data... writes, put back under the same name - NVRAM.ram - so a run can continue from where another left off. It is mounted read-only and pinned by hash, and the movie cites it, so a movie that starts from a saved game is as reproducible as one that starts from a blank console. Leave it empty and the machine starts with nothing remembered."
+      "help": "The saved data the console starts with. A 3DO keeps saved games and its own settings in a small internal memory (NVRAM). This is the file that Emulator > Export Save Data... writes. Put it back under the same name, NVRAM.ram, to continue a run from where another one stopped. The file is never changed. The project and the movie record exactly which file it was, so a movie that starts from a saved game can be played back by anyone who has the same file. Leave it empty and the console starts with nothing saved."
     }
   ]
 }
