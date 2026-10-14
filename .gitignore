@@ -3,3 +3,5 @@ build/
 waterbox/tests/work/
 tests/roms-local/
 tests/firmware-local/
+# what the sandbox writes when a run ends badly
+minibox-diag.log
