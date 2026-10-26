@@ -93,9 +93,11 @@ run_frontend() {
 	} > "$job"
 	rm -f "$work/$tag.ram.bin" "$work/$tag.meta.txt"
 	[ -n "$shot" ] && rm -f "$shot"
+	local project
+	project="$(game_project "$tag" "$cfg" "$package" "$rom")" || { cp "$work/projects/$tag.make.log" "$work/$tag.log"; return 1; }
 	( cd "$chimera_root" && MINIHAWK_JOB="$job" timeout 900 mono "$emu_exe" --headless \
 		"--config=$cfg" "--core=$package" \
-		"--lua=$here/frontend-ram.lua" "$rom" ) > "$work/$tag.log" 2>&1
+		"--lua=$here/frontend-ram.lua" "--project=$project" ) > "$work/$tag.log" 2>&1
 	[ -f "$work/$tag.meta.txt" ] && grep -q "^status=OK" "$work/$tag.meta.txt"
 }
 
@@ -113,7 +115,26 @@ native_ram() {
 		> "$work/native.$tag.txt" 2>&1
 }
 
-settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "{\"panafz1.bin\": \"$work/panafz1.bin\"}"; }
+firmware_json="{\"panafz1.bin\": \"$work/panafz1.bin\"}"
+# A game runs only in a project (Chimera, 2026-10-26): each run opens one made
+# of its game with chimera-run --new-project, holding the settings (and the firmware)
+# settings_config was given for the config it runs with.
+declare -A settings_of firmware_of
+settings_config() { python3 "$here/settings-config.py" "$config" "$1" "$2" "$firmware_json"; settings_of["$1"]="$2"; firmware_of["$1"]="$firmware_json"; }
+crun="$chimera_root/build/dll/chimera-run"
+game_project() { # tag, config, package, game: prints the project's path
+	local dir="$work/projects" settings="${settings_of[$2]:-}" firmware="${firmware_of[$2]:-}"
+	local pkg="$3" game="$4"
+	local fw=()
+	[ -n "$firmware" ] && mapfile -t fw < <(python3 -c 'import json,sys
+for k, v in json.loads(sys.argv[1]).items(): print("--firmware"); print(k + "=" + v)' "$firmware")
+	# one copy of each game, every run's project beside it
+	local copy="$dir/$(basename "$game")"
+	mkdir -p "$dir"
+	[ -f "$copy" ] && [ "$(stat -c %s "$copy")" = "$(stat -c %s "$game")" ] || cp "$game" "$copy"
+	"$crun" --new-project "$dir/$1.chimeraProject" "$pkg" "$copy" \
+		--settings "${settings:-"{}"}" "${fw[@]}" > "$dir/$1.make.log" 2>&1 && echo "$dir/$1.chimeraProject"
+}
 
 # --- the machine the frontend builds must be the one the gate signed off on ---
 settings_config "$work/config.base.ini" '{}'
