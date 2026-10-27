@@ -57,8 +57,8 @@ meson compile -C "$MB/build/meson-linux"
 ```
 
 Opera is plain C: the plain miniBox build is enough. The scripts do not build
-miniBox, so this comes first. The frontend gate also needs Mono, Xvfb, the
-.NET SDK 8.0 and a built Chimera: see `docs/BUILDING.md`.
+miniBox, so this comes first. The frontend gate also needs a built Chimera
+(window included; no display is needed): see `docs/BUILDING.md`.
 
 ## Build
 
@@ -81,9 +81,9 @@ ninja -C build/meson-guest
 
 `build-package.sh -r "$CHIMERA"` installs it: `$CHIMERA/build/Cores/` is the
 cores folder of a Chimera source checkout. For a release bundle, copy the
-`.chimeraCore` file into the `Cores` folder beside `Chimera.exe` (or the
-folder chosen in File > Core Manager > Change folder...). Chimera downloads
-nothing. File > Core Manager lists the folder; Refresh List rescans it.
+`.chimeraCore` file into the `cores` folder beside Chimera's program (or the
+folder chosen in Tools > Core Manager... > Change folder...). Chimera downloads
+nothing. Tools > Core Manager... lists the folder; Refresh List rescans it.
 
 A package built by hand is stamped `<commit>+local`, with `-dirty` because
 the patched submodule is a change in the tree. It is for testing. Only CI
@@ -102,7 +102,7 @@ dummy BIOS, compares the sandboxed core with the same sources built for the
 host (video, audio, lag, memory), round-trips a savestate around every frame,
 and checks turbo, save data and two settings. No leg of it can skip.
 
-The frontend gate needs a built Chimera (`$CHIMERA/build/Chimera.exe`), the
+The frontend gate needs a built Chimera (`$CHIMERA/build/meson-linux/source/ui/chimera`), the
 installed package and `build/meson-native/run-native`. Every leg must report
 PASS. CI publishes only when the core gate and the frontend gate are green.
 

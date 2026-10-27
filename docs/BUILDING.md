@@ -32,17 +32,13 @@ For the frontend gate, which builds all of Chimera (workflow job
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
   meson ninja-build build-essential cmake pkg-config python3 \
-  mono-complete xvfb \
   libgl1-mesa-dev libx11-dev libxext-dev libasound2-dev
 ```
 
-The frontend gate also needs the .NET SDK 8.0. The workflow installs it with
-`actions/setup-dotnet@v4` and `dotnet-version: '8.0'`. By hand, Chimera's
-README gives the command and says why the distribution's SDK is not enough:
-
-```sh
-curl -sSL https://dot.net/v1/dotnet-install.sh | bash -s -- --channel 8.0
-```
+The frontend gate also needs Chimera built with its window. Chimera's
+`tools/ci-chimera.sh` installs what that needs (Qt 6.12, from Qt's own
+archives with aqt) and builds it; the workflow keeps Qt in `~/qt` between
+runs.
 
 No compiler version is pinned. The build uses the gcc that `build-essential`
 installs, and the package records that gcc version in its `build.json`. Opera
@@ -226,10 +222,10 @@ gets into Chimera because somebody puts the file there.
 - In a Chimera source checkout the cores folder is `<chimera>/build/Cores/`.
   `build-package.sh -r <chimera>` writes the package there, so there is
   nothing else to do.
-- In a release bundle, copy `opera.chimeraCore` into the `Cores` folder
-  beside `Chimera.exe` (or into the folder chosen in File > Core Manager >
-  Change folder...).
-- File > Core Manager lists what is in that folder. Refresh List rescans it.
+- In a release bundle, copy `opera.chimeraCore` into the `cores` folder
+  beside Chimera's program (or into the folder chosen in Tools > Core
+  Manager... > Change folder...).
+- Tools > Core Manager... lists what is in that folder. Refresh List rescans it.
 
 The same package file works on Linux and on Windows. The guest inside it is
 run by Chimera's sandbox (miniBox) on either.
@@ -237,7 +233,7 @@ run by Chimera's sandbox (miniBox) on either.
 Packages built by CI are on this repository's Releases page,
 https://github.com/ToolAssisted-run/chimera-core-opera/releases : a rolling
 `dev` release and dated `nightly-YYYY-MM-DD` releases. The asset is named
-`opera-<version>.chimeraCore`. Download it and put it in the `Cores` folder.
+`opera-<version>.chimeraCore`. Download it and put it in the `cores` folder.
 
 To use the core: File > New Project... and pick it. To play a disc with no
 project, start Chimera with `--core=<package> <rom>`.
@@ -260,7 +256,7 @@ core really ran. They need nothing provisioned.
 ```
 
 It needs `run-native` and `run-wbx` in `build/meson-native`, and
-`build/meson-guest/core.wbx`, and nothing else: no .NET, no Mono, no X.
+`build/meson-guest/core.wbx`, and nothing else: Chimera is not involved.
 
 ```
 ./waterbox/run-gate.sh [-n <native build dir>] [-g <guest build dir>]
@@ -288,10 +284,7 @@ Build Chimera as the workflow does:
 
 ```sh
 cd <chimera>
-meson setup build/meson-linux --prefix "$PWD/build" --libdir dll
-meson compile -C build/meson-linux
-meson install -C build/meson-linux
-dotnet build source/gui/Chimera.sln -c Release /nodeReuse:false -p:UseSharedCompilation=false
+tools/ci-chimera.sh
 ```
 
 Then, from `<repo>`:
@@ -305,9 +298,8 @@ Then, from `<repo>`:
 ./waterbox/tests/run-frontend.sh [--chimera-root <chimera>] [--frames N]
 ```
 
-It starts `<chimera>/build/Chimera.exe` under Mono with `--headless` and the
-package. With `DISPLAY` unset it starts its own Xvfb; with `DISPLAY` set it
-uses that display. The default is 300 frames. The dummy BIOS reaches the
+It starts Chimera's window, `<chimera>/build/meson-linux/source/ui/chimera`,
+with `--headless` and the package; no display is needed. The default is 300 frames. The dummy BIOS reaches the
 core through Chimera's real firmware channel, which accepts a dump it does
 not recognise.
 
@@ -409,7 +401,6 @@ SHA-1.
 - `Chimera not built`, `package not installed` or `native reference not
   built` (`run-frontend.sh`): build Chimera, run `build-package.sh`, build
   `run-native`.
-- `Xvfb not found (apt install xvfb)` (`run-frontend.sh`): install `xvfb`.
 - A frontend leg fails with `no OK meta` or `run did not report OK`: read the
   log it names under `waterbox/tests/work/`. A first run that cannot make its
   configuration says `config bootstrap failed`; read

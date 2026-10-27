@@ -26,9 +26,9 @@ The core is one file, `opera.chimeraCore`.
 [Chimera](https://github.com/ToolAssisted-run/chimera) downloads nothing: get
 the package from this repository's
 [Releases](https://github.com/ToolAssisted-run/chimera-core-opera/releases)
-page, or build it, and put it in Chimera's `Cores` folder (the folder beside
-`Chimera.exe`, or the one chosen in File > Core Manager > Change folder...).
-File > Core Manager lists what is there. Discs, BIOS and font roms are yours
+page, or build it, and put it in Chimera's `cores` folder (the folder beside
+Chimera's program, or the one chosen in Tools > Core Manager... > Change folder...).
+Tools > Core Manager... lists what is there. Discs, BIOS and font roms are yours
 to provide.
 
 - [docs/BUILDING.md](docs/BUILDING.md) - how to build the package, install it
