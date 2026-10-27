@@ -150,7 +150,8 @@ fi
 # the keys the package ships are the machine's when nobody changed them (the
 # window keeps only the keys a person changed; fresh settings have none)
 lua_script=dump-controls.lua
-cp "$work/settings.base.json" "$work/settings.keys.json"
+# made as the other runs are, so its project carries the test BIOS too
+settings_config "$work/settings.keys.json" '{}'
 if run_frontend "keys" "$work/settings.keys.json" 1; then
 	lua_script=
 	if python3 "$here/check-keybinds.py" "$work/keys.controls.json" \
