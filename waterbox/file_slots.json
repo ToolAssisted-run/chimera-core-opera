@@ -3,7 +3,7 @@
   "slots": [
     {
       "id": "cd",
-      "title": "Discs",
+      "title": "slot.cd",
       "min": 1,
       "max": -1,
       "formats": [
@@ -12,17 +12,17 @@
         "chd",
         "bin"
       ],
-      "help": "3DO disc images. Each can be a raw dump (.iso or .bin), a .cue file whose track files join the project automatically, or a .chd file. The first disc is in the drive when the machine starts. The order here is the order the Previous Disc and Next Disc inputs go through."
+      "help": "slot.cd.help"
     },
     {
       "id": "savedata",
-      "title": "Save data",
+      "title": "slot.savedata",
       "min": 0,
       "max": 1,
       "formats": [
         "ram"
       ],
-      "help": "The saved data the console starts with. A 3DO keeps saved games and its own settings in a small internal memory (NVRAM). This is the file that Emulator > Export Save Data... writes. Put it back under the same name, NVRAM.ram, to continue a run from where another one stopped. The file is never changed. The project and the movie record exactly which file it was, so a movie that starts from a saved game can be played back by anyone who has the same file. Leave it empty and the console starts with nothing saved."
+      "help": "slot.savedata.help"
     }
   ]
 }

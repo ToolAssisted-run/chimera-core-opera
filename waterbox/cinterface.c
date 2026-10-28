@@ -43,6 +43,11 @@ extern int opera_input_ports_read; /* patched opera_madam.c raises it on PBus DM
 /* The one file this machine keeps, in and out under the same name. */
 #define NVRAM_FILE_NAME "NVRAM.ram"
 
+/* A text a person reads is a key of languages/en.json, each of its
+ * arguments after a TEXT_ARG (chimera docs/translations.md). TEXT_ARG is a
+ * string of its own so the byte after it is never read as more of its hex. */
+#define TEXT_ARG "\x1f"
+
 static char g_loadError[512];
 static int g_inited;
 
@@ -400,7 +405,7 @@ ECL_EXPORT int Init(void)
 	const char *biosFile = bios_file_for(systemType);
 	if (biosFile == NULL)
 	{
-		snprintf(g_loadError, sizeof g_loadError, "unknown systemType '%s'", systemType);
+		snprintf(g_loadError, sizeof g_loadError, "error.unknown_system" TEXT_ARG "%s", systemType);
 		return 0;
 	}
 	snprintf(g_biosName, sizeof g_biosName, "%s", biosFile);
@@ -440,8 +445,7 @@ ECL_EXPORT int Init(void)
 			if (strcmp(entry, NVRAM_FILE_NAME) != 0)
 			{
 				snprintf(g_loadError, sizeof g_loadError,
-					"this machine does not read save data called \"%s\". It reads %s - "
-					"the name Export Save Data writes.", entry, NVRAM_FILE_NAME);
+					"error.save_name" TEXT_ARG "%s" TEXT_ARG "%s", entry, NVRAM_FILE_NAME);
 				return 0;
 			}
 		}
@@ -459,7 +463,7 @@ ECL_EXPORT int Init(void)
 		FILE *f = fopen("rom.iso", "rb");
 		if (f == NULL)
 		{
-			snprintf(g_loadError, sizeof g_loadError, "no disc image is mounted");
+			snprintf(g_loadError, sizeof g_loadError, "error.no_file");
 			return 0;
 		}
 		fclose(f);
@@ -475,7 +479,7 @@ ECL_EXPORT int Init(void)
 		if (f == NULL)
 		{
 			snprintf(g_loadError, sizeof g_loadError,
-				"the '%s' BIOS rom is not mounted; satisfy the firmware page", g_biosName);
+				"error.no_bios" TEXT_ARG "%s", g_biosName);
 			return 0;
 		}
 		fclose(f);
@@ -496,7 +500,7 @@ ECL_EXPORT int Init(void)
 	game.path = g_discs[0];
 	if (!retro_load_game(&game))
 	{
-		snprintf(g_loadError, sizeof g_loadError, "Opera could not load '%s'", g_discs[0]);
+		snprintf(g_loadError, sizeof g_loadError, "error.not_loaded" TEXT_ARG "%s", g_discs[0]);
 		return 0;
 	}
 
