@@ -231,9 +231,9 @@ The same package file works on Linux and on Windows. The guest inside it is
 run by Chimera's sandbox (miniBox) on either.
 
 Packages built by CI are on this repository's Releases page,
-https://github.com/ToolAssisted-run/chimera-core-opera/releases : a rolling
-`dev` release and dated `nightly-YYYY-MM-DD` releases. The asset is named
-`opera-<version>.chimeraCore`. Download it and put it in the `cores` folder.
+https://github.com/ToolAssisted-run/chimera-core-opera/releases : dated
+`nightly-YYYY-MM-DD` releases. The asset is named
+`opera-<version>-x86_64.chimeraCore`. Download it and put it in the `cores` folder.
 
 To use the core: File > New Project... and pick it. To play a disc with no
 project, start Chimera with `--core=<package> <rom>`.
@@ -341,10 +341,10 @@ pass: it ran nothing.
 
 `.github/workflows/chimera.yml` runs `core-gate` and `frontend-gate` on every
 pull request and push to `main`, every day at 04:00 UTC, and on manual
-dispatch. `publish` runs when both jobs passed and the event is not a pull
-request. A push publishes the rolling `dev` release. The scheduled run
-publishes `nightly-YYYY-MM-DD`, and only when `main` moved since the last
-nightly. A manual run takes `kind`, `dev` or `nightly`; blank means `dev`.
+dispatch. `publish` runs when both jobs passed and the run is the scheduled
+one or was started by hand: it publishes `nightly-YYYY-MM-DD`, and only when
+`main` moved since the last nightly. A push or a pull request publishes
+nothing.
 
 ## Files the core needs at run time
 
