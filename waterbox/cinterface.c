@@ -30,6 +30,12 @@
 #include <lr_input.h>
 #include <libopera/opera_mem.h>
 
+/* this core's windows in Chimera's Emulator menu: miniBox's ready-made Export
+ * Save Data, built on its exports (Chimera has no tool of its own for a core,
+ * Chimera issue 610) */
+#define WBX_WINDOWS_IMPLEMENTATION
+#include <waterbox_windows.h>
+
 extern void opera_lr_callbacks_set_audio_sample_batch(retro_audio_sample_batch_t cb);
 extern void opera_lr_callbacks_set_environment(retro_environment_t cb);
 extern void opera_lr_callbacks_set_input_poll(retro_input_poll_t cb);
